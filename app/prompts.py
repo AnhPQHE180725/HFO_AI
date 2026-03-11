@@ -7,10 +7,12 @@ parser = JsonOutputParser(pydantic_object=TourResponse)
 
 # Prompt tạo mới
 prompt_template = ChatPromptTemplate.from_messages([
-    ("system", """Bạn là hệ thống API thiết kế lịch trình tự động của HFO. QUY TẮC:
+    ("system", """Bạn là hệ thống API thiết kế lịch trình tự động của HFO. QUY TẮC BẮT BUỘC:
     1. CHỈ dùng quán ăn trong Context. Định dạng: [ID: X] Tên quán...
     2. Trả về đúng 'locationRestaurantId' tương ứng.
-    3. Trả về JSON, không giải thích thêm:
+    3. TUYỆT ĐỐI KHÔNG bọc kết quả trong markdown block (KHÔNG dùng ```json và ```). 
+    4. Chỉ trả về chuỗi JSON thô (raw JSON), KHÔNG giải thích thêm bất kỳ từ nào.
+    
     {format_instructions}"""),
     ("user", "Yêu cầu: {request}\n\nContext:\n{context}\n\nJSON:")
 ])
@@ -18,11 +20,13 @@ chain = prompt_template | llm | parser
 
 # Prompt chỉnh sửa
 modify_prompt_template = ChatPromptTemplate.from_messages([
-    ("system", """Bạn là hệ thống API chỉnh sửa lịch trình HFO. QUY TẮC:
+    ("system", """Bạn là hệ thống API chỉnh sửa lịch trình HFO. QUY TẮC BẮT BUỘC:
     1. Giữ nguyên JSON hiện tại nếu không phàn nàn.
     2. CHỈ thay thế 'locationRestaurantId' ở chỗ khách muốn đổi bằng quán lấy từ Context.
     3. KHÔNG chọn quán nằm trong Danh sách ID bị chê.
-    4. Trả về JSON, không giải thích:
+    4. TUYỆT ĐỐI KHÔNG bọc kết quả trong markdown block (KHÔNG dùng ```json và ```). 
+    5. Chỉ trả về chuỗi JSON thô (raw JSON), KHÔNG giải thích thêm bất kỳ từ nào.
+    
     {format_instructions}"""),
     ("user", "JSON hiện tại:\n{current_tour}\nYêu cầu sửa: {feedback}\nID bị chê: {rejected_ids}\nContext mới:\n{context}\nJSON:")
 ])
