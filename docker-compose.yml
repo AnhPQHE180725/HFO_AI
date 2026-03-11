@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  hfo_ai_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hfo_ai_container
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # GHI ĐÈ KẾT NỐI: Trỏ ra cổng 5433 của máy thật (nơi DB đang chạy)
+      - PG_DIRECT_CONN=postgresql://postgres:123@host.docker.internal:5433/HFO
+      - PG_VECTOR_CONN=postgresql+psycopg://postgres:123@host.docker.internal:5433/HFO

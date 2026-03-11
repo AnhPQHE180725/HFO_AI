@@ -1,0 +1,4 @@
+Chạy file: hfo_env\Scripts\activate
+Chạy Sysnc data: sync_real_data.py
+
+uvicorn api:app --reload --port 8000
