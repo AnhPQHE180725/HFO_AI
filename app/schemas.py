@@ -1,28 +1,66 @@
-from pydantic import BaseModel, Field
 from typing import List, Optional
 
+from pydantic import BaseModel, Field, model_validator
+
+
 class TourRequest(BaseModel):
-    prompt: str = Field(..., example="Tour 1 ngày Hà Nội có cả ăn uống và tham quan")
+    prompt: str = Field(..., example="Tour 1 ngay Ha Noi co ca an uong va tham quan")
+    userLatitude: Optional[float] = Field(
+        default=None,
+        description="Vi do hien tai cua nguoi dung (optional), de toi uu route theo khoang cach.",
+    )
+    userLongitude: Optional[float] = Field(
+        default=None,
+        description="Kinh do hien tai cua nguoi dung (optional), de toi uu route theo khoang cach.",
+    )
+
 
 class ActivityModel(BaseModel):
-    activityType: int = Field(description="BẮT BUỘC: 1 nếu là Đi ăn (Dining), 2 nếu là Tham quan (Sightseeing)")
-    locationRestaurantId: Optional[int] = Field(default=None, description="Mã ID quán ăn (Chỉ điền nếu activityType = 1, nếu không thì để null)")
-    attractionId: Optional[int] = Field(default=None, description="Mã ID điểm tham quan (Chỉ điền nếu activityType = 2, nếu không thì để null)")
-    startTime: str = Field(description="Thời gian bắt đầu (Ví dụ: '07:30:00')")
-    note: str = Field(description="1 câu ngắn gọn lý do chọn")
+    activityType: int = Field(description="1 = Dining, 2 = Sightseeing.")
+    locationRestaurantId: Optional[int] = Field(
+        default=None, description="Chi co gia tri khi activityType = 1."
+    )
+    attractionId: Optional[int] = Field(
+        default=None, description="Chi co gia tri khi activityType = 2."
+    )
+    startTime: str = Field(description="Dinh dang HH:MM:SS, vi du 07:30:00.")
+    note: str = Field(description="Ghi chu ngan gon cho activity.")
+
 
 class DayModel(BaseModel):
-    dayNumber: int = Field(description="Số thứ tự của ngày")
-    activities: List[ActivityModel] = Field(description="Danh sách hoạt động (kết hợp cả ăn uống và tham quan xen kẽ)")
+    dayNumber: int = Field(description="So thu tu ngay.")
+    activities: List[ActivityModel] = Field(description="Danh sach activities trong ngay.")
+
 
 class TourResponse(BaseModel):
-    title: str = Field(description="Tiêu đề lịch trình do AI tự đặt")
-    description: str = Field(description="Mô tả trải nghiệm")
-    estimatedCost: float = Field(description="Tổng chi phí ước tính (Tính tổng giá các quán ăn và vé tham quan nếu có)")
-    days: List[DayModel] = Field(description="Danh sách các ngày")
+    title: str = Field(description="Tieu de lich trinh.")
+    description: str = Field(description="Mo ta tong quan.")
+    estimatedCost: float = Field(description="Tong chi phi uoc tinh.")
+    days: List[DayModel] = Field(description="Danh sach cac ngay.")
+
 
 class ModifyTourRequest(BaseModel):
-    current_tour: TourResponse = Field(description="Lịch trình hiện tại")
-    feedback: str = Field(description="Khách muốn sửa gì?")
-    rejected_restaurant_ids: List[int] = Field(default=[], description="Danh sách ID quán ăn bị chê")
-    rejected_attraction_ids: List[int] = Field(default=[], description="Danh sách ID điểm tham quan bị chê")
+    current_tour: TourResponse = Field(description="Lich trinh hien tai.")
+    feedback: str = Field(description="Yeu cau dieu chinh.")
+
+    # Backward compatible with FE currently sending rejected_ids.
+    rejected_ids: List[int] = Field(default_factory=list)
+
+    # New optional split lists by place type.
+    rejected_restaurant_ids: List[int] = Field(default_factory=list)
+    rejected_attraction_ids: List[int] = Field(default_factory=list)
+
+    userLatitude: Optional[float] = Field(default=None)
+    userLongitude: Optional[float] = Field(default=None)
+
+    @model_validator(mode="after")
+    def _merge_legacy_rejected_ids(self):
+        if self.rejected_ids:
+            legacy_ids = set(self.rejected_ids)
+            self.rejected_restaurant_ids = sorted(
+                set(self.rejected_restaurant_ids).union(legacy_ids)
+            )
+            self.rejected_attraction_ids = sorted(
+                set(self.rejected_attraction_ids).union(legacy_ids)
+            )
+        return self

@@ -1,35 +1,66 @@
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from app.schemas import TourResponse
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.config import llm
+from app.schemas import TourResponse
 
 parser = JsonOutputParser(pydantic_object=TourResponse)
 
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", """Bạn là hệ thống thiết kế lịch trình ẨM THỰC VÀ DU LỊCH.
-    QUY TẮC BẮT BUỘC:
-    1. ƯU TIÊN ẨM THỰC: Phần lớn lịch trình (70%-80%) BẮT BUỘC phải là các Quán ăn [Dining]. Điểm tham quan [Sightseeing] chỉ là phụ để đi dạo tiêu thực hoặc check-in xen kẽ.
-    2. TỐI ƯU DI CHUYỂN: Hãy dựa vào "Tọa độ" (Latitude, Longitude) và "Địa chỉ" trong Context để gom các địa điểm ở gần nhau vào cùng 1 buổi hoặc 1 ngày. Tránh việc bắt khách di chuyển quá xa giữa các bữa.
-    3. CHỈ dùng dữ liệu trong Context. Context có dạng: [Loại - ID: X] Tên...
-    4. Nếu chọn [Dining], BẮT BUỘC set activityType = 1, điền locationRestaurantId = X, và attractionId = null.
-    5. Nếu chọn [Sightseeing], BẮT BUỘC set activityType = 2, điền attractionId = X, và locationRestaurantId = null.
-    6. TUYỆT ĐỐI KHÔNG bọc kết quả trong markdown block (KHÔNG dùng ```json). Chỉ trả về chuỗi JSON thô.
-    
-    {format_instructions}"""),
-    ("user", "Yêu cầu: {request}\n\nContext:\n{context}\n\nJSON:")
-])
+prompt_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """Ban la he thong lap lich trinh du lich am thuc.
+QUY TAC BAT BUOC:
+1. Chi duoc dung ID co trong Context.
+2. Dining phai set activityType=1, locationRestaurantId co gia tri, attractionId=null.
+3. Sightseeing phai set activityType=2, attractionId co gia tri, locationRestaurantId=null.
+4. startTime BAT BUOC dung dinh dang HH:MM:SS de parse duoc TimeSpan ben C#.
+5. Lich trinh uu tien am thuc:
+   - Mac dinh >=70% so activity la Dining.
+   - Neu la lich 1 ngay thi co it nhat 3 bua (sang/trua/toi), uu tien them bua xe chieu neu hop ly.
+6. Toi uu di chuyen:
+   - Su dung toa do va khoang cach trong Context de di theo cum dia diem gan nhau.
+   - Khong xep 2 diem qua xa lien tiep neu co lua chon gan hon.
+   - Neu co "User location", activity dau ngay nen la diem gan nguoi dung hon.
+7. Ton trong gio mo cua neu Context co Operating hours/Open-Close.
+8. Uu tien da dang category mon an trong cung 1 ngay.
+9. estimatedCost la tong uoc tinh tu cac diem Dining duoc chon.
+10. Khong boc ket qua trong markdown. Chi tra ve JSON tho theo dung schema.
+
+{format_instructions}""",
+        ),
+        (
+            "user",
+            "Yeu cau: {request}\n\nThong tin lap lich bo sung: {planning_hint}\n\nContext:\n{context}\n\nJSON:",
+        ),
+    ]
+)
 chain = prompt_template | llm | parser
 
-modify_prompt_template = ChatPromptTemplate.from_messages([
-    ("system", """Bạn là hệ thống sửa lịch trình CÓ CẢ ĂN UỐNG VÀ THAM QUAN.
-    QUY TẮC BẮT BUỘC:
-    1. Giữ nguyên JSON hiện tại nếu không phàn nàn.
-    2. CHỈ thay thế các activity bị chê bằng dữ liệu lấy từ Context.
-    3. Ưu tiên chọn địa điểm thay thế có Tọa độ (Latitude, Longitude) gần với các địa điểm khác trong cùng 1 buổi để tối ưu di chuyển.
-    4. Nếu đổi sang [Dining] thì activityType=1, nếu đổi sang [Sightseeing] thì activityType=2. Các ID không dùng phải để null.
-    5. TUYỆT ĐỐI KHÔNG bọc kết quả trong markdown block (KHÔNG dùng ```json). Chỉ trả về chuỗi JSON thô.
-    
-    {format_instructions}"""),
-    ("user", "JSON hiện tại:\n{current_tour}\nYêu cầu sửa: {feedback}\nID bị chê: {rejected_ids}\nContext mới:\n{context}\nJSON:")
-])
+modify_prompt_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """Ban la he thong sua lich trinh du lich am thuc.
+QUY TAC BAT BUOC:
+1. Giu nguyen nhung activity khong bi phan nan.
+2. Khong duoc chon lai bat ky ID nao nam trong danh sach bi loai.
+3. Van phai dam bao uu tien am thuc (>=70% Dining) va toi uu di chuyen theo cum toa do.
+4. Ton trong gio mo cua neu Context co.
+5. Dung dung schema:
+   - Dining: activityType=1, locationRestaurantId co gia tri, attractionId=null
+   - Sightseeing: activityType=2, attractionId co gia tri, locationRestaurantId=null
+6. startTime phai la HH:MM:SS.
+7. Cap nhat lai estimatedCost sau khi thay doi.
+8. Khong boc markdown. Chi tra ve JSON tho.
+
+{format_instructions}""",
+        ),
+        (
+            "user",
+            "Lich trinh hien tai:\n{current_tour}\n\nYeu cau sua: {feedback}\n\nThong tin lap lich bo sung: {planning_hint}\n\nDanh sach ID bi loai: {rejected_ids}\n\nContext thay the:\n{context}\n\nJSON:",
+        ),
+    ]
+)
 modify_chain = modify_prompt_template | llm | parser

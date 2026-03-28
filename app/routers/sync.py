@@ -1,9 +1,34 @@
+from datetime import datetime, time, timedelta
+from typing import Any, Optional
+
 import psycopg
 from fastapi import APIRouter, HTTPException
 from langchain_core.documents import Document
+
 from app.config import PG_DIRECT_CONN, vector_store
 
 router = APIRouter(prefix="/api/v1/sync", tags=["Database Sync"])
+
+
+def _time_to_hhmm(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, datetime):
+        return value.strftime("%H:%M")
+    if isinstance(value, timedelta):
+        total_seconds = int(value.total_seconds())
+        hours = (total_seconds // 3600) % 24
+        minutes = (total_seconds % 3600) // 60
+        return f"{hours:02d}:{minutes:02d}"
+    return str(value)
+
+
+def _safe_text(value: Optional[str], fallback: str = "unknown") -> str:
+    text = (value or "").strip()
+    return text if text else fallback
+
 
 @router.post("/run")
 async def sync_database():
@@ -11,39 +36,207 @@ async def sync_database():
     try:
         with psycopg.connect(PG_DIRECT_CONN) as conn:
             with conn.cursor() as cur:
-                # 1. Đồng bộ Quán ăn (Dining) - Kéo thêm Tọa độ
-                cur.execute("""
-                    SELECT lr."LocationRestaurantId", r."RestaurantName", r."Description", r."AvgPrice", c."CategoryName", lr."Address", lr."Latitude", lr."Longitude"
+                # Dining: restaurant + category + dishes + dish categories + operating hours + location.
+                cur.execute(
+                    """
+                    WITH dish_summary AS (
+                        SELECT d."RestaurantId",
+                               STRING_AGG(
+                                    DISTINCT d."DishName" || ' (' || d."Price"::text || ' VND)',
+                                    '; '
+                               ) AS dishes
+                        FROM public."Dishes" d
+                        GROUP BY d."RestaurantId"
+                    ),
+                    dish_category_summary AS (
+                        SELECT dc."RestaurantId",
+                               STRING_AGG(DISTINCT dc."CategoryName", ', ') AS dish_categories
+                        FROM public."DishCategories" dc
+                        GROUP BY dc."RestaurantId"
+                    ),
+                    operating_hour_summary AS (
+                        SELECT oh."LocationRestaurantId",
+                               STRING_AGG(
+                                   CASE
+                                       WHEN oh."IsClosed" = true THEN
+                                           CASE oh."DayOfWeek"
+                                               WHEN 0 THEN 'Sun'
+                                               WHEN 1 THEN 'Mon'
+                                               WHEN 2 THEN 'Tue'
+                                               WHEN 3 THEN 'Wed'
+                                               WHEN 4 THEN 'Thu'
+                                               WHEN 5 THEN 'Fri'
+                                               WHEN 6 THEN 'Sat'
+                                               ELSE 'Day'
+                                           END || ': closed'
+                                       ELSE
+                                           CASE oh."DayOfWeek"
+                                               WHEN 0 THEN 'Sun'
+                                               WHEN 1 THEN 'Mon'
+                                               WHEN 2 THEN 'Tue'
+                                               WHEN 3 THEN 'Wed'
+                                               WHEN 4 THEN 'Thu'
+                                               WHEN 5 THEN 'Fri'
+                                               WHEN 6 THEN 'Sat'
+                                               ELSE 'Day'
+                                           END || ': ' ||
+                                           TO_CHAR(oh."OpenTime", 'HH24:MI') || '-' || TO_CHAR(oh."CloseTime", 'HH24:MI')
+                                   END,
+                                   '; '
+                                   ORDER BY oh."DayOfWeek"
+                               ) AS operating_hours
+                        FROM public."OperatingHours" oh
+                        GROUP BY oh."LocationRestaurantId"
+                    )
+                    SELECT
+                        lr."LocationRestaurantId",
+                        r."RestaurantName",
+                        r."Description",
+                        r."AvgPrice",
+                        c."CategoryName",
+                        lr."Address",
+                        lr."Latitude",
+                        lr."Longitude",
+                        loc."CityProvince",
+                        loc."Ward",
+                        ds.dishes,
+                        dcs.dish_categories,
+                        ohs.operating_hours
                     FROM public."LocationRestaurants" lr
-                    JOIN public."Restaurants" r ON lr."RestaurantId" = r."RestaurantId"
-                    JOIN public."Categories" c ON r."CategoryId" = c."CategoryId"
-                    WHERE r."RestaurantStatus" = 4 OR r."RestaurantStatus" = 1
-                """)
-                for lr_id, name, desc, price, category, address, lat, lon in cur.fetchall():
-                    lat_str = lat if lat else "Không rõ"
-                    lon_str = lon if lon else "Không rõ"
-                    doc = Document(
-                        page_content=f"Quán ăn: {name}. ĐC: {address}. Tọa độ: ({lat_str}, {lon_str}). Loại: {category}. Đặc điểm: {desc}. Giá: {price}.",
-                        metadata={"type": "Dining", "id": lr_id, "name": name, "price": float(price) if price else 0}
-                    )
-                    documents.append(doc)
+                    JOIN public."Restaurants" r
+                        ON lr."RestaurantId" = r."RestaurantId"
+                    LEFT JOIN public."Categories" c
+                        ON r."CategoryId" = c."CategoryId"
+                    LEFT JOIN public."Locations" loc
+                        ON lr."LocationId" = loc."LocationId"
+                    LEFT JOIN dish_summary ds
+                        ON r."RestaurantId" = ds."RestaurantId"
+                    LEFT JOIN dish_category_summary dcs
+                        ON r."RestaurantId" = dcs."RestaurantId"
+                    LEFT JOIN operating_hour_summary ohs
+                        ON lr."LocationRestaurantId" = ohs."LocationRestaurantId"
+                    WHERE r."RestaurantStatus" IN (1, 4)
+                    """
+                )
 
-                # 2. Đồng bộ Địa điểm tham quan (Sightseeing) - Kéo thêm Tọa độ
-                cur.execute("""
-                    SELECT "AttractionId", "Name", "Description", "Address", "Latitude", "Longitude"
-                    FROM public."Attractions"
-                """)
-                for att_id, name, desc, address, lat, lon in cur.fetchall():
-                    lat_str = lat if lat else "Không rõ"
-                    lon_str = lon if lon else "Không rõ"
-                    doc = Document(
-                        page_content=f"Điểm tham quan: {name}. ĐC: {address}. Tọa độ: ({lat_str}, {lon_str}). Đặc điểm: {desc}.",
-                        metadata={"type": "Sightseeing", "id": att_id, "name": name, "price": 0} 
+                for (
+                    lr_id,
+                    name,
+                    desc,
+                    price,
+                    category,
+                    address,
+                    lat,
+                    lon,
+                    city,
+                    ward,
+                    dishes,
+                    dish_categories,
+                    operating_hours,
+                ) in cur.fetchall():
+                    content = (
+                        f"Restaurant: {_safe_text(name)}. "
+                        f"Address: {_safe_text(address)}. "
+                        f"Area: ward={_safe_text(ward)}, city={_safe_text(city)}. "
+                        f"Coordinates: ({_safe_text(lat)}, {_safe_text(lon)}). "
+                        f"Category: {_safe_text(category)}. "
+                        f"Average price: {float(price) if price else 0} VND. "
+                        f"Operating hours: {_safe_text(operating_hours)}. "
+                        f"Dish categories: {_safe_text(dish_categories)}. "
+                        f"Signature dishes: {_safe_text(dishes)}. "
+                        f"Description: {_safe_text(desc)}."
                     )
-                    documents.append(doc)
-        
+
+                    documents.append(
+                        Document(
+                            page_content=content,
+                            metadata={
+                                "type": "Dining",
+                                "id": lr_id,
+                                "name": name,
+                                "price": float(price) if price else 0,
+                                "category": _safe_text(category),
+                                "latitude": _safe_text(lat),
+                                "longitude": _safe_text(lon),
+                                "city": _safe_text(city),
+                                "ward": _safe_text(ward),
+                            },
+                        )
+                    )
+
+                # Sightseeing: attraction + open/close + location.
+                cur.execute(
+                    """
+                    SELECT
+                        a."AttractionId",
+                        a."Name",
+                        a."Description",
+                        a."Address",
+                        a."Latitude",
+                        a."Longitude",
+                        a."OpenTime",
+                        a."CloseTime",
+                        loc."CityProvince",
+                        loc."Ward"
+                    FROM public."Attractions" a
+                    LEFT JOIN public."Locations" loc
+                        ON a."LocationId" = loc."LocationId"
+                    """
+                )
+
+                for (
+                    attraction_id,
+                    name,
+                    desc,
+                    address,
+                    lat,
+                    lon,
+                    open_time,
+                    close_time,
+                    city,
+                    ward,
+                ) in cur.fetchall():
+                    content = (
+                        f"Attraction: {_safe_text(name)}. "
+                        f"Address: {_safe_text(address)}. "
+                        f"Area: ward={_safe_text(ward)}, city={_safe_text(city)}. "
+                        f"Coordinates: ({_safe_text(lat)}, {_safe_text(lon)}). "
+                        f"Open-Close: {_time_to_hhmm(open_time)}-{_time_to_hhmm(close_time)}. "
+                        f"Description: {_safe_text(desc)}."
+                    )
+
+                    documents.append(
+                        Document(
+                            page_content=content,
+                            metadata={
+                                "type": "Sightseeing",
+                                "id": attraction_id,
+                                "name": name,
+                                "price": 0.0,
+                                "latitude": _safe_text(lat),
+                                "longitude": _safe_text(lon),
+                                "city": _safe_text(city),
+                                "ward": _safe_text(ward),
+                                "open_time": _time_to_hhmm(open_time),
+                                "close_time": _time_to_hhmm(close_time),
+                            },
+                        )
+                    )
+
+        # Avoid stale duplicates from previous sync runs.
+        try:
+            vector_store.delete_collection()
+            vector_store.create_collection()
+        except Exception:
+            # Keep backward compatibility if the vector backend version
+            # does not expose collection lifecycle helpers.
+            pass
+
         vector_store.add_documents(documents)
-        return {"status": "success", "message": f"Đã đồng bộ {len(documents)} địa điểm (Kèm tọa độ)!"}
-    
+        return {
+            "status": "success",
+            "message": f"Synced {len(documents)} places (Dining + Sightseeing) with rich metadata.",
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
