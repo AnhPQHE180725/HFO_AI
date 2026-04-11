@@ -97,8 +97,8 @@ async def sync_database():
                         lr."Address",
                         lr."Latitude",
                         lr."Longitude",
-                        loc."CityProvince",
-                        loc."Ward",
+                        prov."Name" AS city_province,
+                        w."Name" AS ward_name,
                         ds.dishes,
                         dcs.dish_categories,
                         ohs.operating_hours
@@ -109,6 +109,10 @@ async def sync_database():
                         ON r."CategoryId" = c."CategoryId"
                     LEFT JOIN public."Locations" loc
                         ON lr."LocationId" = loc."LocationId"
+                    LEFT JOIN public."Wards" w
+                        ON loc."WardCode" = w."WardCode"
+                    LEFT JOIN public."Provinces" prov
+                        ON w."ProvinceCode" = prov."ProvinceCode"
                     LEFT JOIN dish_summary ds
                         ON r."RestaurantId" = ds."RestaurantId"
                     LEFT JOIN dish_category_summary dcs
@@ -176,11 +180,15 @@ async def sync_database():
                         a."Longitude",
                         a."OpenTime",
                         a."CloseTime",
-                        loc."CityProvince",
-                        loc."Ward"
+                        prov."Name" AS city_province,
+                        w."Name" AS ward_name
                     FROM public."Attractions" a
                     LEFT JOIN public."Locations" loc
                         ON a."LocationId" = loc."LocationId"
+                    LEFT JOIN public."Wards" w
+                        ON loc."WardCode" = w."WardCode"
+                    LEFT JOIN public."Provinces" prov
+                        ON w."ProvinceCode" = prov."ProvinceCode"
                     """
                 )
 

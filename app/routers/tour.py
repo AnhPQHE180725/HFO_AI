@@ -1,5 +1,6 @@
+import asyncio
 import math
-from typing import Any, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.documents import Document
@@ -10,6 +11,8 @@ from app.prompts import chain, modify_chain, parser
 from app.schemas import ModifyTourRequest, TourRequest, TourResponse
 
 router = APIRouter(prefix="/api/v1/tours", tags=["AI Tours"])
+MAX_DOC_CONTENT_CHARS = 360
+MAX_CONTEXT_CHARS = 4800
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -86,17 +89,32 @@ def _distance_text(doc: Document, user_lat: Optional[float], user_lon: Optional[
     return f"{_haversine_km(user_lat, user_lon, lat, lon):.2f} km"
 
 
+def _truncate_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
+
+
 def _build_context(
     docs: List[Document], user_lat: Optional[float], user_lon: Optional[float]
 ) -> str:
     lines = []
+    current_len = 0
     for doc in docs:
         doc_type = doc.metadata.get("type")
         doc_id = doc.metadata.get("id")
         distance = _distance_text(doc, user_lat, user_lon)
-        lines.append(
-            f"[{doc_type} - ID: {doc_id}] DistanceFromUser: {distance}. {doc.page_content}"
+        content = _truncate_text(doc.page_content, MAX_DOC_CONTENT_CHARS)
+        line = (
+            f"[{doc_type} - ID: {doc_id}] DistanceFromUser: {distance}. {content}"
         )
+        next_len = current_len + len(line) + (1 if lines else 0)
+        if next_len > MAX_CONTEXT_CHARS:
+            break
+        lines.append(
+            line
+        )
+        current_len = next_len
     return "\n".join(lines)
 
 
@@ -144,15 +162,45 @@ def _compute_estimated_cost_from_db(location_restaurant_ids: List[int]) -> float
         return 0.0
 
 
-def _enforce_estimated_cost_from_db(ai_response: dict) -> dict:
+def _build_dining_price_map(docs: List[Document]) -> Dict[int, float]:
+    prices: Dict[int, float] = {}
+    for doc in docs:
+        if doc.metadata.get("type") != "Dining":
+            continue
+        rid = doc.metadata.get("id")
+        if not isinstance(rid, int):
+            continue
+        price = _to_float(doc.metadata.get("price"))
+        prices[rid] = price if price is not None else 0.0
+    return prices
+
+
+def _estimate_cost_from_docs(ai_response: dict, dining_price_map: Dict[int, float]) -> Optional[float]:
     dining_ids = _extract_dining_ids(ai_response)
-    ai_response["estimatedCost"] = _compute_estimated_cost_from_db(dining_ids)
+    if not dining_ids:
+        return 0.0
+
+    missing_ids = [rid for rid in dining_ids if rid not in dining_price_map]
+    if missing_ids:
+        return None
+
+    return float(sum(dining_price_map.get(rid, 0.0) for rid in dining_ids))
+
+
+def _enforce_estimated_cost(ai_response: dict, dining_price_map: Dict[int, float]) -> dict:
+    estimated = _estimate_cost_from_docs(ai_response, dining_price_map)
+    if estimated is None:
+        estimated = _compute_estimated_cost_from_db(_extract_dining_ids(ai_response))
+    ai_response["estimatedCost"] = estimated
     return ai_response
 
 
-def _collect_docs_for_generate(request: TourRequest) -> List[Document]:
-    dining_docs = _safe_similarity_search(request.prompt, k=20, doc_type="Dining")
-    sightseeing_docs = _safe_similarity_search(request.prompt, k=10, doc_type="Sightseeing")
+async def _collect_docs_for_generate(request: TourRequest) -> List[Document]:
+    dining_task = asyncio.to_thread(_safe_similarity_search, request.prompt, 20, "Dining")
+    sightseeing_task = asyncio.to_thread(
+        _safe_similarity_search, request.prompt, 10, "Sightseeing"
+    )
+    dining_docs, sightseeing_docs = await asyncio.gather(dining_task, sightseeing_task)
 
     ordered_dining = _sort_docs_by_distance(
         _dedupe_docs(dining_docs), request.userLatitude, request.userLongitude
@@ -172,10 +220,11 @@ def _collect_docs_for_generate(request: TourRequest) -> List[Document]:
     return _dedupe_docs(merged)
 
 
-def _collect_docs_for_modify(request: ModifyTourRequest) -> List[Document]:
+async def _collect_docs_for_modify(request: ModifyTourRequest) -> List[Document]:
     query = f"{request.feedback}\n{request.current_tour.model_dump_json()}"
-    dining_docs = _safe_similarity_search(query, k=20, doc_type="Dining")
-    sightseeing_docs = _safe_similarity_search(query, k=10, doc_type="Sightseeing")
+    dining_task = asyncio.to_thread(_safe_similarity_search, query, 20, "Dining")
+    sightseeing_task = asyncio.to_thread(_safe_similarity_search, query, 10, "Sightseeing")
+    dining_docs, sightseeing_docs = await asyncio.gather(dining_task, sightseeing_task)
 
     rejected_restaurant_ids = set(request.rejected_restaurant_ids)
     rejected_attraction_ids = set(request.rejected_attraction_ids)
@@ -196,18 +245,19 @@ def _collect_docs_for_modify(request: ModifyTourRequest) -> List[Document]:
 @router.post("/generate", response_model=TourResponse)
 async def generate_tour(request: TourRequest):
     try:
-        docs = _collect_docs_for_generate(request)
+        docs = await _collect_docs_for_generate(request)
         context_text = _build_context(docs, request.userLatitude, request.userLongitude)
         planning_hint = _build_planning_hint(request.userLatitude, request.userLongitude)
-        ai_response = chain.invoke(
+        ai_response = await asyncio.to_thread(
+            chain.invoke,
             {
                 "request": request.prompt,
                 "planning_hint": planning_hint,
                 "context": context_text,
                 "format_instructions": parser.get_format_instructions(),
-            }
+            },
         )
-        return _enforce_estimated_cost_from_db(ai_response)
+        return _enforce_estimated_cost(ai_response, _build_dining_price_map(docs))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -215,13 +265,14 @@ async def generate_tour(request: TourRequest):
 @router.post("/modify", response_model=TourResponse)
 async def modify_tour(request: ModifyTourRequest):
     try:
-        docs = _collect_docs_for_modify(request)
+        docs = await _collect_docs_for_modify(request)
         context_text = _build_context(docs, request.userLatitude, request.userLongitude)
         planning_hint = _build_planning_hint(request.userLatitude, request.userLongitude)
         rejected_ids = sorted(
             set(request.rejected_restaurant_ids).union(set(request.rejected_attraction_ids))
         )
-        ai_response = modify_chain.invoke(
+        ai_response = await asyncio.to_thread(
+            modify_chain.invoke,
             {
                 "current_tour": request.current_tour.model_dump_json(indent=2),
                 "feedback": request.feedback,
@@ -229,8 +280,8 @@ async def modify_tour(request: ModifyTourRequest):
                 "rejected_ids": rejected_ids,
                 "context": context_text,
                 "format_instructions": parser.get_format_instructions(),
-            }
+            },
         )
-        return _enforce_estimated_cost_from_db(ai_response)
+        return _enforce_estimated_cost(ai_response, _build_dining_price_map(docs))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
