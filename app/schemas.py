@@ -24,6 +24,10 @@ class ActivityModel(BaseModel):
         default=None, description="Chi co gia tri khi activityType = 2."
     )
     startTime: str = Field(description="Dinh dang HH:MM:SS, vi du 07:30:00.")
+    durationMinutes: Optional[int] = Field(
+        default=None,
+        description="Thoi gian o lai dia diem (phut), phai > 1. Vi du: 60 = 1 gio. Bat buoc phai co gia tri.",
+    )
     note: str = Field(description="Ghi chu ngan gon cho activity.")
 
 

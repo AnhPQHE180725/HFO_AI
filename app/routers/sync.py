@@ -56,36 +56,10 @@ async def sync_database():
                     ),
                     operating_hour_summary AS (
                         SELECT oh."LocationRestaurantId",
-                               STRING_AGG(
-                                   CASE
-                                       WHEN oh."IsClosed" = true THEN
-                                           CASE oh."DayOfWeek"
-                                               WHEN 0 THEN 'Sun'
-                                               WHEN 1 THEN 'Mon'
-                                               WHEN 2 THEN 'Tue'
-                                               WHEN 3 THEN 'Wed'
-                                               WHEN 4 THEN 'Thu'
-                                               WHEN 5 THEN 'Fri'
-                                               WHEN 6 THEN 'Sat'
-                                               ELSE 'Day'
-                                           END || ': closed'
-                                       ELSE
-                                           CASE oh."DayOfWeek"
-                                               WHEN 0 THEN 'Sun'
-                                               WHEN 1 THEN 'Mon'
-                                               WHEN 2 THEN 'Tue'
-                                               WHEN 3 THEN 'Wed'
-                                               WHEN 4 THEN 'Thu'
-                                               WHEN 5 THEN 'Fri'
-                                               WHEN 6 THEN 'Sat'
-                                               ELSE 'Day'
-                                           END || ': ' ||
-                                           TO_CHAR(oh."OpenTime", 'HH24:MI') || '-' || TO_CHAR(oh."CloseTime", 'HH24:MI')
-                                   END,
-                                   '; '
-                                   ORDER BY oh."DayOfWeek"
-                               ) AS operating_hours
+                               MIN(oh."OpenTime")  AS open_time,
+                               MAX(oh."CloseTime") AS close_time
                         FROM public."OperatingHours" oh
+                        WHERE oh."IsClosed" = false
                         GROUP BY oh."LocationRestaurantId"
                     )
                     SELECT
@@ -101,7 +75,8 @@ async def sync_database():
                         w."Name" AS ward_name,
                         ds.dishes,
                         dcs.dish_categories,
-                        ohs.operating_hours
+                        ohs.open_time,
+                        ohs.close_time
                     FROM public."LocationRestaurants" lr
                     JOIN public."Restaurants" r
                         ON lr."RestaurantId" = r."RestaurantId"
@@ -136,7 +111,8 @@ async def sync_database():
                     ward,
                     dishes,
                     dish_categories,
-                    operating_hours,
+                    open_time,
+                    close_time,
                 ) in cur.fetchall():
                     content = (
                         f"Restaurant: {_safe_text(name)}. "
@@ -145,7 +121,7 @@ async def sync_database():
                         f"Coordinates: ({_safe_text(lat)}, {_safe_text(lon)}). "
                         f"Category: {_safe_text(category)}. "
                         f"Average price: {float(price) if price else 0} VND. "
-                        f"Operating hours: {_safe_text(operating_hours)}. "
+                        f"Open-Close: {_time_to_hhmm(open_time)}-{_time_to_hhmm(close_time)}. "
                         f"Dish categories: {_safe_text(dish_categories)}. "
                         f"Signature dishes: {_safe_text(dishes)}. "
                         f"Description: {_safe_text(desc)}."
@@ -179,16 +155,8 @@ async def sync_database():
                         a."Latitude",
                         a."Longitude",
                         a."OpenTime",
-                        a."CloseTime",
-                        prov."Name" AS city_province,
-                        w."Name" AS ward_name
+                        a."CloseTime"
                     FROM public."Attractions" a
-                    LEFT JOIN public."Locations" loc
-                        ON a."LocationId" = loc."LocationId"
-                    LEFT JOIN public."Wards" w
-                        ON loc."WardCode" = w."WardCode"
-                    LEFT JOIN public."Provinces" prov
-                        ON w."ProvinceCode" = prov."ProvinceCode"
                     """
                 )
 
@@ -201,13 +169,10 @@ async def sync_database():
                     lon,
                     open_time,
                     close_time,
-                    city,
-                    ward,
                 ) in cur.fetchall():
                     content = (
                         f"Attraction: {_safe_text(name)}. "
                         f"Address: {_safe_text(address)}. "
-                        f"Area: ward={_safe_text(ward)}, city={_safe_text(city)}. "
                         f"Coordinates: ({_safe_text(lat)}, {_safe_text(lon)}). "
                         f"Open-Close: {_time_to_hhmm(open_time)}-{_time_to_hhmm(close_time)}. "
                         f"Description: {_safe_text(desc)}."
@@ -223,8 +188,6 @@ async def sync_database():
                                 "price": 0.0,
                                 "latitude": _safe_text(lat),
                                 "longitude": _safe_text(lon),
-                                "city": _safe_text(city),
-                                "ward": _safe_text(ward),
                                 "open_time": _time_to_hhmm(open_time),
                                 "close_time": _time_to_hhmm(close_time),
                             },

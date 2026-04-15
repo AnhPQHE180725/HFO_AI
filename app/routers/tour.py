@@ -11,8 +11,8 @@ from app.prompts import chain, modify_chain, parser
 from app.schemas import ModifyTourRequest, TourRequest, TourResponse
 
 router = APIRouter(prefix="/api/v1/tours", tags=["AI Tours"])
-MAX_DOC_CONTENT_CHARS = 360
-MAX_CONTEXT_CHARS = 4800
+MAX_DOC_CONTENT_CHARS = 300
+MAX_CONTEXT_CHARS = 3600
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -196,23 +196,22 @@ def _enforce_estimated_cost(ai_response: dict, dining_price_map: Dict[int, float
 
 
 async def _collect_docs_for_generate(request: TourRequest) -> List[Document]:
-    dining_task = asyncio.to_thread(_safe_similarity_search, request.prompt, 20, "Dining")
+    dining_task = asyncio.to_thread(_safe_similarity_search, request.prompt, 14, "Dining")
     sightseeing_task = asyncio.to_thread(
-        _safe_similarity_search, request.prompt, 10, "Sightseeing"
+        _safe_similarity_search, request.prompt, 6, "Sightseeing"
     )
     dining_docs, sightseeing_docs = await asyncio.gather(dining_task, sightseeing_task)
 
     ordered_dining = _sort_docs_by_distance(
         _dedupe_docs(dining_docs), request.userLatitude, request.userLongitude
-    )[:14]
+    )[:10]
     ordered_sightseeing = _sort_docs_by_distance(
         _dedupe_docs(sightseeing_docs), request.userLatitude, request.userLongitude
-    )[:6]
+    )[:4]
 
     merged: List[Document] = []
     merged.extend(ordered_dining)
 
-    # Interleave a few attractions while keeping dining dominant.
     for i, att in enumerate(ordered_sightseeing):
         insert_at = min(2 + i * 3, len(merged))
         merged.insert(insert_at, att)

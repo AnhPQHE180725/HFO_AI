@@ -16,17 +16,20 @@ QUY TAC BAT BUOC:
 2. Dining phai set activityType=1, locationRestaurantId co gia tri, attractionId=null.
 3. Sightseeing phai set activityType=2, attractionId co gia tri, locationRestaurantId=null.
 4. startTime BAT BUOC dung dinh dang HH:MM:SS de parse duoc TimeSpan ben C#.
-5. Lich trinh uu tien am thuc:
+5. durationMinutes BAT BUOC co gia tri > 1 cho moi activity:
+   - Dining: uoc tinh 45-90 phut tuy loai bua (sang nhanh ~45, trua/toi ~60-90).
+   - Sightseeing: uoc tinh 60-180 phut tuy quy mo dia diem.
+6. Lich trinh uu tien am thuc:
    - Mac dinh >=70% so activity la Dining.
    - Neu la lich 1 ngay thi co it nhat 3 bua (sang/trua/toi), uu tien them bua xe chieu neu hop ly.
-6. Toi uu di chuyen:
+7. Toi uu di chuyen:
    - Su dung toa do va khoang cach trong Context de di theo cum dia diem gan nhau.
    - Khong xep 2 diem qua xa lien tiep neu co lua chon gan hon.
    - Neu co "User location", activity dau ngay nen la diem gan nguoi dung hon.
-7. Ton trong gio mo cua neu Context co Operating hours/Open-Close.
-8. Uu tien da dang category mon an trong cung 1 ngay.
-9. estimatedCost la tong uoc tinh tu cac diem Dining duoc chon.
-10. Khong boc ket qua trong markdown. Chi tra ve JSON tho theo dung schema.
+8. Ton trong gio mo cua neu Context co Operating hours/Open-Close.
+9. Uu tien da dang category mon an trong cung 1 ngay.
+10. estimatedCost la tong uoc tinh tu cac diem Dining duoc chon.
+11. Khong boc ket qua trong markdown. Chi tra ve JSON tho theo dung schema.
 
 {format_instructions}""",
         ),
@@ -52,8 +55,11 @@ QUY TAC BAT BUOC:
    - Dining: activityType=1, locationRestaurantId co gia tri, attractionId=null
    - Sightseeing: activityType=2, attractionId co gia tri, locationRestaurantId=null
 6. startTime phai la HH:MM:SS.
-7. Cap nhat lai estimatedCost sau khi thay doi.
-8. Khong boc markdown. Chi tra ve JSON tho.
+7. durationMinutes BAT BUOC co gia tri > 1 cho moi activity:
+   - Giu nguyen durationMinutes cua activity khong thay doi.
+   - Activity moi: Dining ~45-90 phut, Sightseeing ~60-180 phut.
+8. Cap nhat lai estimatedCost sau khi thay doi.
+9. Khong boc markdown. Chi tra ve JSON tho.
 
 {format_instructions}""",
         ),
