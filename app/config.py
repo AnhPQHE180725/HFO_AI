@@ -12,7 +12,7 @@ PG_VECTOR_CONN = os.getenv("PG_VECTOR_CONN")
 COLLECTION_NAME = os.getenv("VECTOR_COLLECTION")
 
 # Khởi tạo AI
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=GOOGLE_API_KEY, temperature=0.1)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", google_api_key=GOOGLE_API_KEY, temperature=0.1)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
 # Kết nối Vector DB
