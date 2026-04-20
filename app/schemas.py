@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field, model_validator
 
 class TourRequest(BaseModel):
     prompt: str = Field(..., example="Tour 1 ngay Ha Noi co ca an uong va tham quan")
+    userId: Optional[int] = Field(
+        default=None,
+        description="ID cua nguoi dung (Traveler) de doc Bio va Preferences ca nhan hoa lich trinh.",
+    )
     userLatitude: Optional[float] = Field(
         default=None,
         description="Vi do hien tai cua nguoi dung (optional), de toi uu route theo khoang cach.",
@@ -54,6 +58,7 @@ class ModifyTourRequest(BaseModel):
     rejected_restaurant_ids: List[int] = Field(default_factory=list)
     rejected_attraction_ids: List[int] = Field(default_factory=list)
 
+    userId: Optional[int] = Field(default=None)
     userLatitude: Optional[float] = Field(default=None)
     userLongitude: Optional[float] = Field(default=None)
 
