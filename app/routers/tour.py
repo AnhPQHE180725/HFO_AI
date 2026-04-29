@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 import psycopg
 
 from app.config import PG_DIRECT_CONN, vector_store
-from app.filters import TourInputError, validate_tour_prompt
+from app.filters import TourInputError, validate_tour_prompt, validate_modify_feedback
 from app.prompts import chain, modify_chain, parser
 from app.schemas import ModifyTourRequest, TourRequest, TourResponse
 
@@ -242,6 +242,25 @@ def _enforce_estimated_cost(ai_response: dict, dining_price_map: Dict[int, float
     return ai_response
 
 
+# Default duration fallback khi AI không gen durationMinutes
+_DEFAULT_DURATION: Dict[int, int] = {
+    1: 60,   # Dining: 60 phút
+    2: 90,   # Sightseeing: 90 phút
+}
+_FALLBACK_DURATION = 60
+
+
+def _enforce_duration_minutes(ai_response: dict) -> dict:
+    """Đảm bảo mọi activity đều có durationMinutes > 1. Nếu AI bỏ qua hoặc trả null thì gán fallback."""
+    for day in ai_response.get("days", []):
+        for activity in day.get("activities", []):
+            duration = activity.get("durationMinutes")
+            if not isinstance(duration, int) or duration <= 1:
+                activity_type = activity.get("activityType", 0)
+                activity["durationMinutes"] = _DEFAULT_DURATION.get(activity_type, _FALLBACK_DURATION)
+    return ai_response
+
+
 async def _collect_docs_for_generate(request: TourRequest) -> List[Document]:
     dining_task = asyncio.to_thread(_safe_similarity_search, request.prompt, 14, "Dining")
     sightseeing_task = asyncio.to_thread(
@@ -315,6 +334,7 @@ async def generate_tour(request: TourRequest):
                 "format_instructions": parser.get_format_instructions(),
             },
         )
+        ai_response = _enforce_duration_minutes(ai_response)
         return _enforce_estimated_cost(ai_response, _build_dining_price_map(docs))
     except HTTPException:
         raise
@@ -325,7 +345,7 @@ async def generate_tour(request: TourRequest):
 @router.post("/modify", response_model=TourResponse)
 async def modify_tour(request: ModifyTourRequest):
     try:
-        validate_tour_prompt(request.feedback)
+        validate_modify_feedback(request.feedback)
     except TourInputError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -354,6 +374,7 @@ async def modify_tour(request: ModifyTourRequest):
                 "format_instructions": parser.get_format_instructions(),
             },
         )
+        ai_response = _enforce_duration_minutes(ai_response)
         return _enforce_estimated_cost(ai_response, _build_dining_price_map(docs))
     except HTTPException:
         raise

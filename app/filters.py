@@ -167,3 +167,31 @@ def validate_tour_prompt(prompt: str) -> None:
             "Vui lòng nhập yêu cầu tạo lịch trình tour, ví dụ: "
             "\"Tour 1 ngày Hà Nội ăn uống và tham quan\"."
         )
+
+
+def validate_modify_feedback(prompt: str) -> None:
+    """
+    Validate feedback for tour modification — chỉ check cơ bản,
+    không yêu cầu từ khóa du lịch vì feedback có thể là "chọn chỗ rẻ hơn", v.v.
+    """
+    stripped = prompt.strip()
+
+    # 1. Basic length check
+    if len(stripped) < 3:
+        raise TourInputError(
+            "Yêu cầu quá ngắn. Vui lòng mô tả rõ hơn bạn muốn chỉnh sửa gì."
+        )
+
+    # 2. Gibberish check
+    alpha_count = sum(1 for c in stripped if c.isalpha())
+    if len(stripped) > 0 and alpha_count / len(stripped) < 0.3:
+        raise TourInputError(
+            "Yêu cầu không hợp lệ. Vui lòng nhập mô tả bằng tiếng Việt hoặc tiếng Anh."
+        )
+
+    # 3. Block other cities/provinces
+    if _match_any(stripped, _OTHER_CITY_PATTERNS):
+        raise TourInputError(
+            "Hiện tại hệ thống chỉ hỗ trợ tour tại Hà Nội. "
+            "Vui lòng thử lại với yêu cầu tour Hà Nội."
+        )
