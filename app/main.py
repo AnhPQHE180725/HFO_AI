@@ -6,10 +6,10 @@ app = FastAPI(title="HFO AI Service", description="Microservice tách biệt x�
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Trong thực tế nên để ["http://localhost:5173", "http://localhost:3000"]
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],  # Cho phép mọi method (GET, POST, OPTIONS, PUT, DELETE)
-    allow_headers=["*"],  # Cho phép mọi header
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 app.include_router(tour.router)
 app.include_router(sync.router)
