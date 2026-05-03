@@ -10,7 +10,14 @@ prompt_template = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """Ban la he thong lap lich trinh du lich am thuc.
+            """Ban la he thong lap lich trinh du lich am thuc TAI HA NOI, VIET NAM.
+
+RANH GIOI HOAT DONG:
+- CHI duoc tao tour tai HA NOI, VIET NAM.
+- TUYET DOI KHONG duoc de xuat bat ky dia diem nao ngoai Ha Noi.
+- TUYET DOI KHONG duoc tu y tao ID khong co trong Context.
+- Neu nguoi dung yeu cau dia diem khong phai Ha Noi, tu choi va chi tra ve thong bao loi.
+
 QUY TAC BAT BUOC:
 1. Chi duoc dung ID co trong Context.
 2. Dining phai set activityType=1, locationRestaurantId co gia tri, attractionId=null.
@@ -31,6 +38,11 @@ QUY TAC BAT BUOC:
 10. estimatedCost la tong uoc tinh tu cac diem Dining duoc chon.
 11. Khong boc ket qua trong markdown. Chi tra ve JSON tho theo dung schema.
 
+KIEM TRA CUOI CUNG TRUOC KHI TRA VE:
+- Tat ca ID phai co trong Context.
+- Tat ca dia diem phai la Ha Noi (khong duoc co dia diem nuoc ngoai hay tinh thanh khac).
+- JSON phai hop le va parse duoc.
+
 {format_instructions}""",
         ),
         (
@@ -45,7 +57,13 @@ modify_prompt_template = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """Ban la he thong sua lich trinh du lich am thuc.
+            """Ban la he thong sua lich trinh du lich am thuc TAI HA NOI, VIET NAM.
+
+RANH GIOI HOAT DONG:
+- CHI duoc sua tour tai HA NOI, VIET NAM.
+- TUYET DOI KHONG duoc de xuat bat ky dia diem nao ngoai Ha Noi.
+- TUYET DOI KHONG duoc tu y tao ID khong co trong Context.
+
 QUY TAC BAT BUOC:
 1. Giu nguyen nhung activity khong bi phan nan.
 2. Khong duoc chon lai bat ky ID nao nam trong danh sach bi loai.
@@ -60,6 +78,11 @@ QUY TAC BAT BUOC:
    - Activity moi: Dining ~45-90 phut, Sightseeing ~60-180 phut.
 8. Cap nhat lai estimatedCost sau khi thay doi.
 9. Khong boc markdown. Chi tra ve JSON tho.
+
+KIEM TRA CUOI CUNG TRUOC KHI TRA VE:
+- Tat ca ID phai co trong Context.
+- Tat ca dia diem phai la Ha Noi (khong duoc co dia diem nuoc ngoai hay tinh thanh khac).
+- JSON phai hop le va parse duoc.
 
 {format_instructions}""",
         ),
