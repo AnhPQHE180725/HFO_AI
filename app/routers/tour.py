@@ -242,16 +242,15 @@ def _enforce_estimated_cost(ai_response: dict, dining_price_map: Dict[int, float
     return ai_response
 
 
-# Default duration fallback khi AI không gen durationMinutes
 _DEFAULT_DURATION: Dict[int, int] = {
-    1: 60,   # Dining: 60 phút
-    2: 90,   # Sightseeing: 90 phút
+    1: 60,   
+    2: 90,  
 }
 _FALLBACK_DURATION = 60
 
 
 def _enforce_duration_minutes(ai_response: dict) -> dict:
-    """Đảm bảo mọi activity đều có durationMinutes > 1. Nếu AI bỏ qua hoặc trả null thì gán fallback."""
+    """Đảm bảo mọi activity đều có durationMinutes """
     for day in ai_response.get("days", []):
         for activity in day.get("activities", []):
             duration = activity.get("durationMinutes")

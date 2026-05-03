@@ -36,7 +36,6 @@ async def sync_database():
     try:
         with psycopg.connect(PG_DIRECT_CONN) as conn:
             with conn.cursor() as cur:
-                # Dining: restaurant + category + dishes + dish categories + operating hours + location.
                 cur.execute(
                     """
                     WITH dish_summary AS (
@@ -144,7 +143,7 @@ async def sync_database():
                         )
                     )
 
-                # Sightseeing: attraction + open/close + location.
+
                 cur.execute(
                     """
                     SELECT
@@ -194,13 +193,10 @@ async def sync_database():
                         )
                     )
 
-        # Avoid stale duplicates from previous sync runs.
         try:
             vector_store.delete_collection()
             vector_store.create_collection()
         except Exception:
-            # Keep backward compatibility if the vector backend version
-            # does not expose collection lifecycle helpers.
             pass
 
         vector_store.add_documents(documents)
