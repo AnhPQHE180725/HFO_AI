@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from app.routers import tour, sync
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="HFO AI Service", description="Microservice tách biệt xử lý RAG AI")
+app = FastAPI(title="HFO AI Service", description="Tách biệt xử lý RAG AI")
 
 app.add_middleware(
     CORSMiddleware,

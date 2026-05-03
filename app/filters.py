@@ -1,11 +1,3 @@
-"""
-Input validation & filtering for tour generation requests.
-
-Rules:
-1. Prompt must be related to food/travel/tour topics.
-2. Only Hanoi tours are supported — reject requests for other cities/provinces.
-"""
-
 import re
 from typing import Optional
 
@@ -170,10 +162,7 @@ def validate_tour_prompt(prompt: str) -> None:
 
 
 def validate_modify_feedback(prompt: str) -> None:
-    """
-    Validate feedback for tour modification — chỉ check cơ bản,
-    không yêu cầu từ khóa du lịch vì feedback có thể là "chọn chỗ rẻ hơn", v.v.
-    """
+
     stripped = prompt.strip()
 
     # 1. Basic length check
